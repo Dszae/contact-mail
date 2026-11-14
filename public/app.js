@@ -6,9 +6,8 @@ import { CONFIG } from './config.js';
 
 const SCOPE = 'https://www.googleapis.com/auth/gmail.modify';
 const API = 'https://gmail.googleapis.com/gmail/v1/users/me/';
-const UPLOAD = 'https://gmail.googleapis.com/upload/gmail/v1/users/me/messages/send?uploadType=multipart';
 const PAGE = 25;
-const MAX_ATTACH = 24 * 1024 * 1024;
+const MAX_ATTACH = 15 * 1024 * 1024;
 const PREVIEW = new URLSearchParams(location.search).has('preview');
 const ADDRESS = CONFIG.address.toLowerCase();
 const DOMAIN = CONFIG.domain.toLowerCase();
@@ -480,12 +479,11 @@ const Gmail = {
     return b64urlToBytes(r.data);
   },
 
-  async send({ mime, threadId }) {
-    if (!Auth.valid()) throw new AuthError();
-    const b = `rel_${rand()}`;
-    const body = `--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(threadId ? { threadId } : {})}\r\n--${b}\r\nContent-Type: message/rfc822\r\n\r\n${mime}\r\n--${b}--`;
-    const res = await fetch(UPLOAD, { method: 'POST', headers: { Authorization: `Bearer ${Auth.token}`, 'Content-Type': `multipart/related; boundary=${b}` }, body });
-    return readResponse(res);
+  // JSON endpoint on purpose: the /upload endpoints omit CORS headers on error
+  // responses, so the browser reports only "Failed to fetch" and hides the cause.
+  send({ mime, threadId }) {
+    const raw = utf8B64(mime).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    return this.req('messages/send', { method: 'POST', body: threadId ? { raw, threadId } : { raw } });
   },
 };
 
@@ -1400,7 +1398,7 @@ function renderCompose() {
       <div class="field"><label class="field-label" for="c-subject">Subject</label><input id="c-subject" name="subject" value="${esc(c.subject)}" autocomplete="off"></div>
       <textarea name="body" aria-label="Message" placeholder="Write your message">${esc(c.body)}</textarea>
       ${c.quote ? `<details class="quoted"><summary>${c.quote.kind === 'forward' ? 'Forwarded message included' : 'Quoted message included'}</summary><pre>${esc(`${c.quote.head}\n\n${c.quote.text}`)}</pre></details>` : ''}
-      ${c.files.length ? `<div class="files">${c.files.map((f, i) => `<span class="file-chip">${icon('clip')}<span class="file-name">${esc(f.name)}</span><span class="muted">${esc(fmtSize(f.size))}</span><button class="icon-btn xs" data-action="remove-file" data-idx="${i}" aria-label="Remove ${esc(f.name)}">${icon('x')}</button></span>`).join('')}<span class="muted files-total">${esc(fmtSize(total))} of 24 MB</span></div>` : ''}
+      ${c.files.length ? `<div class="files">${c.files.map((f, i) => `<span class="file-chip">${icon('clip')}<span class="file-name">${esc(f.name)}</span><span class="muted">${esc(fmtSize(f.size))}</span><button class="icon-btn xs" data-action="remove-file" data-idx="${i}" aria-label="Remove ${esc(f.name)}">${icon('x')}</button></span>`).join('')}<span class="muted files-total">${esc(fmtSize(total))} of 15 MB</span></div>` : ''}
     </div>
     <footer class="compose-foot">
       <button class="btn primary" data-action="send" ${c.sending ? 'disabled' : ''}>${c.sending ? '<span>Sending</span><span class="spinner" aria-hidden="true"></span>' : `<span>Send</span>${icon('send')}`}</button>
@@ -1428,7 +1426,7 @@ async function addFiles(files) {
   if (!c) return;
   let total = c.files.reduce((n, f) => n + f.size, 0);
   for (const f of files) {
-    if (total + f.size > MAX_ATTACH) { toast('Attachments are limited to 24 MB per message', { tone: 'error' }); break; }
+    if (total + f.size > MAX_ATTACH) { toast('Attachments are limited to 15 MB per message', { tone: 'error' }); break; }
     try {
       const b64 = await new Promise((resolve, reject) => {
         const r = new FileReader();
