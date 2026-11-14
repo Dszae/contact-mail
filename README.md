@@ -29,7 +29,7 @@ In Testing mode Google asks you to approve access again roughly every 7 days.
 ## Commands
 
 ```
-npx wrangler dev --port 8799 --ip 127.0.0.1   # local, open /?preview for sample data
+npx wrangler dev --port 8799 --ip 127.0.0.1   # local; /?preview loads sample data on localhost only
 npx wrangler deploy                            # publish
 ```
 

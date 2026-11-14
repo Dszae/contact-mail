@@ -8,7 +8,8 @@ const SCOPE = 'https://www.googleapis.com/auth/gmail.modify';
 const API = 'https://gmail.googleapis.com/gmail/v1/users/me/';
 const PAGE = 25;
 const MAX_ATTACH = 15 * 1024 * 1024;
-const PREVIEW = new URLSearchParams(location.search).has('preview');
+// Sample-data mode for local design checks only; never available on the live domain.
+const PREVIEW = new URLSearchParams(location.search).has('preview') && ['127.0.0.1', 'localhost'].includes(location.hostname);
 const ADDRESS = CONFIG.address.toLowerCase();
 const DOMAIN = CONFIG.domain.toLowerCase();
 const ARCH_Q = 'label:' + CONFIG.archiveLabel.toLowerCase().replace(/[\s/]+/g, '-');
@@ -708,14 +709,12 @@ function renderLock({ error = '', busy = false, resume = false } = {}) {
           <p class="lock-sub">${resume
             ? 'Google sessions last an hour. Continue to pick up where you left off.'
             : `Read and answer mail sent to <span class="addr">${esc(CONFIG.address)}</span>. Sign in with the Google account that receives it.`}</p>
-          <div class="lock-actions">
-            ${setup
-              ? '<a class="btn primary lg" href="?preview">Preview with sample mail</a>'
-              : `<button class="btn primary lg" data-action="signin" ${busy || !state.gisReady ? 'disabled' : ''}>
-                   <span>${label}</span>${busy ? '<span class="spinner" aria-hidden="true"></span>' : ''}
-                 </button>
-                 ${resume ? '<button class="btn ghost lg" data-action="signout">Sign out</button>' : '<a class="btn ghost lg" href="?preview">Preview with sample mail</a>'}`}
-          </div>
+          ${setup ? '' : `<div class="lock-actions">
+            <button class="btn primary lg" data-action="signin" ${busy || !state.gisReady ? 'disabled' : ''}>
+              <span>${label}</span>${busy ? '<span class="spinner" aria-hidden="true"></span>' : ''}
+            </button>
+            ${resume ? '<button class="btn ghost lg" data-action="signout">Sign out</button>' : ''}
+          </div>`}
           ${setup ? '<p class="lock-note">Google sign-in is not configured yet. Add the OAuth client ID to <code>public/config.js</code> and deploy again.</p>' : ''}
           ${error ? `<p class="lock-error" role="alert">${esc(error)}</p>` : ''}
         </div>
@@ -793,7 +792,7 @@ function renderApp() {
             ${avatar({ name: CONFIG.displayName, email: ADDRESS }, 'sm')}
             <div class="account-text">
               <span class="account-name">${esc(CONFIG.displayName)}</span>
-              <span class="account-mail" title="${esc(state.account)}">${esc(PREVIEW ? 'Preview with sample mail' : state.account)}</span>
+              <span class="account-mail" title="${esc(state.account)}">${esc(PREVIEW ? 'Local sample data' : state.account)}</span>
             </div>
           </div>
           <div class="rail-tools">
