@@ -1,0 +1,18 @@
+{
+  // Static-assets-only Worker: no script runs per request, so the Free plan
+  // CPU limit (error 1102) cannot apply. Mail is read in the browser via the
+  // Gmail API with the owner's own Google sign-in.
+  "name": "contact-mail",
+  "compatibility_date": "2026-11-12",
+  "assets": {
+    "directory": "./public",
+    "not_found_handling": "single-page-application"
+  },
+  "workers_dev": false,
+  "routes": [
+    {
+      "pattern": "contact.dipeshsapkota7.com.np",
+      "custom_domain": true
+    }
+  ]
+}
