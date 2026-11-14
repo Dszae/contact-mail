@@ -16,12 +16,12 @@ const ARCH_Q = 'label:' + CONFIG.archiveLabel.toLowerCase().replace(/[\s/]+/g, '
 const SCOPE_Q = `(to:${DOMAIN} OR from:${ADDRESS})`;
 
 const VIEWS = {
-  inbox: { id: 'inbox', name: 'Inbox', icon: 'inbox', q: `to:${DOMAIN} -from:${ADDRESS} -${ARCH_Q}`, empty: ['Inbox clear.', `New mail to ${CONFIG.address} lands here.`] },
-  starred: { id: 'starred', name: 'Starred', icon: 'star', q: `is:starred ${SCOPE_Q}`, empty: ['Nothing starred.', 'Press S on a conversation to keep it close.'] },
-  sent: { id: 'sent', name: 'Sent', icon: 'send', q: `from:${ADDRESS} in:sent`, sent: true, empty: ['Nothing sent yet.', 'Replies you send as contact@ appear here.'] },
-  archive: { id: 'archive', name: 'Archived', icon: 'archive', q: ARCH_Q, empty: ['Archive is empty.', 'Archived conversations rest here.'] },
-  spam: { id: 'spam', name: 'Spam', icon: 'alert', q: `in:spam to:${DOMAIN}`, spamTrash: true, empty: ['No spam.', 'Filtered junk shows up here.'] },
-  trash: { id: 'trash', name: 'Trash', icon: 'trash', q: `in:trash ${SCOPE_Q}`, spamTrash: true, empty: ['Trash is empty.', 'Gmail clears trash after 30 days.'] },
+  inbox: { id: 'inbox', name: 'Inbox', icon: 'inbox', q: `to:${DOMAIN} -from:${ADDRESS} -${ARCH_Q}`, empty: ['Inbox is empty', `New mail to ${CONFIG.address} arrives here`] },
+  starred: { id: 'starred', name: 'Starred', icon: 'star', q: `is:starred ${SCOPE_Q}`, empty: ['No starred conversations', 'Press S on a conversation to star it'] },
+  sent: { id: 'sent', name: 'Sent', icon: 'send', q: `from:${ADDRESS} in:sent`, sent: true, empty: ['Nothing sent yet', 'Mail you send as contact@ appears here'] },
+  archive: { id: 'archive', name: 'Archived', icon: 'archive', q: ARCH_Q, empty: ['Archive is empty', 'Press E on a conversation to archive it'] },
+  spam: { id: 'spam', name: 'Spam', icon: 'alert', q: `in:spam to:${DOMAIN}`, spamTrash: true, empty: ['No spam', 'Mail Gmail filters as spam appears here'] },
+  trash: { id: 'trash', name: 'Trash', icon: 'trash', q: `in:trash ${SCOPE_Q}`, spamTrash: true, empty: ['Trash is empty', 'Gmail deletes trash after 30 days'] },
 };
 const VIEW_ORDER = ['inbox', 'starred', 'sent', 'archive', 'spam', 'trash'];
 
@@ -68,7 +68,7 @@ const ICONS = {
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-const icon = (name, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ''}</svg>`;
+const icon = (name, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ''}</svg>`;
 const rand = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -102,6 +102,13 @@ const fmtDay = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeri
 const fmtYear = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 const fmtFull = new Intl.DateTimeFormat(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 const fmtToday = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+const fmtMonth = new Intl.DateTimeFormat(undefined, { month: 'short' });
+
+// Signature detail: received time set like a postmark on opened letters.
+function postmark(d) {
+  const t = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return `<time class="postmark" datetime="${d.toISOString()}" title="${esc(fmtFull.format(d))}">${d.getDate()} ${esc(fmtMonth.format(d))}<span class="pm-year"> ${d.getFullYear()}</span> · ${t}</time>`;
+}
 
 function shortDate(d) {
   const now = new Date();
@@ -670,7 +677,7 @@ function toggleTheme() {
   document.documentElement.dataset.theme = next;
   try { localStorage.setItem('cm-theme', next); } catch {}
   $$('[data-action="theme"]').forEach((b) => { b.innerHTML = icon(next === 'dark' ? 'sun' : 'moon'); });
-  $('meta[name="theme-color"]')?.setAttribute('content', next === 'dark' ? '#070605' : '#f6f4ee');
+  $('meta[name="theme-color"]')?.setAttribute('content', next === 'dark' ? '#141415' : '#fafafa');
 }
 
 const themeIcon = () => icon(currentTheme() === 'dark' ? 'sun' : 'moon');
@@ -679,6 +686,8 @@ const themeIcon = () => icon(currentTheme() === 'dark' ? 'sun' : 'moon');
 /* Lock screen                                                         */
 /* ------------------------------------------------------------------ */
 
+let lockEntered = false;
+
 function renderLock({ error = '', busy = false, resume = false } = {}) {
   const setup = !CONFIG.clientId && !PREVIEW;
   const lock = $('#lock');
@@ -686,40 +695,75 @@ function renderLock({ error = '', busy = false, resume = false } = {}) {
   document.body.classList.add('locked');
   const host = new URL(CONFIG.portfolioUrl).host;
   const label = busy ? 'Waiting for Google' : resume ? 'Continue session' : 'Continue with Google';
+  // One entrance on first load only; later re-renders (Google ready, busy, errors) stay still.
+  const enter = lockEntered ? '' : 'enter';
+  lockEntered = true;
   lock.innerHTML = `
-    <div class="lock ${resume ? 'is-resume' : ''}">
-      <div class="lock-orb" aria-hidden="true"></div>
-      <svg class="lock-rings" viewBox="0 0 600 600" aria-hidden="true">
-        <circle cx="300" cy="300" r="280"/><circle cx="300" cy="300" r="214" class="dash"/><circle cx="300" cy="300" r="148"/>
-        <text x="300" y="352" text-anchor="middle">@</text>
-      </svg>
+    <div class="lock ${resume ? 'is-resume' : ''} ${enter}">
       <header class="lock-top">
-        <span class="mark" aria-hidden="true">ds</span>
+        <span class="brand"><span class="mark" aria-hidden="true">@</span><span class="brand-title">contact</span></span>
         <button class="icon-btn" data-action="theme" aria-label="Toggle colour theme">${themeIcon()}</button>
       </header>
       <main class="lock-main">
-        <p class="eyebrow">${resume ? 'Session paused' : 'Private mailroom'}</p>
-        <h1 class="lock-title"><span>contact</span><span class="at">@</span></h1>
-        <p class="lock-domain">${esc(DOMAIN)}</p>
-        <p class="lock-lede">${resume
-          ? 'Google sessions last an hour. Continue to pick up exactly where you left off.'
-          : `Messages written to ${esc(CONFIG.displayName)} through the portfolio domain, read and answered in one quiet place.`}</p>
-        <div class="lock-actions">
-          ${setup
-            ? '<a class="btn primary lg" href="?preview">Open the preview</a>'
-            : `<button class="btn primary lg" data-action="signin" ${busy || !state.gisReady ? 'disabled' : ''}>
-                 <span>${label}</span>${busy ? '<span class="spinner" aria-hidden="true"></span>' : icon('arrow')}
-               </button>
-               ${resume ? '<button class="btn ghost lg" data-action="signout">Sign out</button>' : '<a class="btn ghost lg" href="?preview">Preview</a>'}`}
+        <div class="lock-copy">
+          <h1 class="lock-title">${resume ? 'Session paused' : `${esc(CONFIG.firstName)}’s contact inbox`}</h1>
+          <p class="lock-sub">${resume
+            ? 'Google sessions last an hour. Continue to pick up where you left off.'
+            : `Read and answer mail sent to <span class="addr">${esc(CONFIG.address)}</span>. Sign in with the Google account that receives it.`}</p>
+          <div class="lock-actions">
+            ${setup
+              ? '<a class="btn primary lg" href="?preview">Preview with sample mail</a>'
+              : `<button class="btn primary lg" data-action="signin" ${busy || !state.gisReady ? 'disabled' : ''}>
+                   <span>${label}</span>${busy ? '<span class="spinner" aria-hidden="true"></span>' : ''}
+                 </button>
+                 ${resume ? '<button class="btn ghost lg" data-action="signout">Sign out</button>' : '<a class="btn ghost lg" href="?preview">Preview with sample mail</a>'}`}
+          </div>
+          ${setup ? '<p class="lock-note">Google sign-in is not configured yet. Add the OAuth client ID to <code>public/config.js</code> and deploy again.</p>' : ''}
+          ${error ? `<p class="lock-error" role="alert">${esc(error)}</p>` : ''}
         </div>
-        ${setup ? '<p class="lock-note">Google sign-in is not configured yet. Add the OAuth client ID to <code>public/config.js</code> and deploy again.</p>' : ''}
-        ${error ? `<p class="lock-error" role="alert">${esc(error)}</p>` : ''}
+        ${resume ? '' : lockPreview()}
       </main>
       <footer class="lock-foot">
         <span>${esc(CONFIG.tagline)}</span>
         <a href="${esc(CONFIG.portfolioUrl)}" rel="noopener">${esc(host)}${icon('external')}</a>
       </footer>
     </div>`;
+}
+
+// Product preview for the sign-in screen: the inbox with one letter open on paper.
+function lockPreview() {
+  const now = new Date();
+  const at = (h) => new Date(now.getTime() - h * 3600e3);
+  const rows = [
+    { p: { name: 'Aarav Shrestha', email: 'aarav@example.com' }, s: 'Motion graphics for a product launch', d: at(0.6), unread: true, sel: true },
+    { p: { name: 'Mira Joshi', email: 'mira@example.org' }, s: 'Research collaboration on a small vision model', d: at(3), unread: true },
+    { p: { name: 'Lab Bulletin', email: 'bulletin@example.edu' }, s: 'Workshop schedule: Embedded Systems Lab', d: at(30) },
+    { p: { name: 'Sagar K.', email: 'sagar@example.net' }, s: 'Question about your Proteus simulation', d: at(52) },
+  ];
+  return `<div class="lock-visual" aria-hidden="true">
+    <div class="pv">
+      <div class="pv-head"><span class="pv-title">Inbox</span><span class="pv-meta">2 unread</span></div>
+      <div class="pv-body">
+        <div class="pv-list">${rows.map((r) => `
+          <div class="pv-row ${r.sel ? 'sel' : ''} ${r.unread ? 'unread' : ''}">
+            ${avatar(r.p, 'sm')}
+            <div class="pv-text"><span class="pv-name">${esc(r.p.name)}</span><span class="pv-subj">${esc(r.s)}</span></div>
+            <span class="pv-date">${esc(shortDate(r.d))}</span>
+          </div>`).join('')}
+        </div>
+        <div class="pv-reader">
+          <p class="pv-subject">Motion graphics for a product launch</p>
+          <div class="pv-from">${avatar(rows[0].p, 'sm')}<span class="pv-name">Aarav Shrestha</span>${postmark(rows[0].d)}</div>
+          <div class="paper pv-paper">
+            <p>Hi Dipesh,</p>
+            <p>I found your motion work through your portfolio and liked the pacing on the sports reels.</p>
+            <p>We launch a small hardware product next month and need a 30 second animated teaser. Would you have time in the next three weeks?</p>
+            <p>Thanks,<br>Aarav</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>`;
 }
 
 function hideLock() {
@@ -738,9 +782,9 @@ function renderApp() {
     <div class="shell" id="shell" data-reader-open="false">
       <aside class="rail">
         <div class="brand">
-          <span class="mark" aria-hidden="true">ds</span>
+          <span class="mark" aria-hidden="true">@</span>
           <div class="brand-text">
-            <span class="brand-title">contact<span class="at">@</span></span>
+            <span class="brand-title">contact</span>
             <span class="brand-sub">${esc(DOMAIN)}</span>
           </div>
         </div>
@@ -750,8 +794,8 @@ function renderApp() {
           <div class="account">
             ${avatar({ name: CONFIG.displayName, email: ADDRESS }, 'sm')}
             <div class="account-text">
-              <span class="account-name">${esc(CONFIG.displayName)}${PREVIEW ? '<span class="pill">Preview</span>' : ''}</span>
-              <span class="account-mail" title="${esc(state.account)}">${esc(PREVIEW ? 'sample data' : state.account)}</span>
+              <span class="account-name">${esc(CONFIG.displayName)}</span>
+              <span class="account-mail" title="${esc(state.account)}">${esc(PREVIEW ? 'Preview with sample mail' : state.account)}</span>
             </div>
           </div>
           <div class="rail-tools">
@@ -767,8 +811,8 @@ function renderApp() {
         <header class="list-head">
           <div class="mobile-bar">
             <div class="brand compact">
-              <span class="mark" aria-hidden="true">ds</span>
-              <span class="brand-title">contact<span class="at">@</span></span>
+              <span class="mark" aria-hidden="true">@</span>
+              <span class="brand-title">contact</span>
             </div>
             <div class="mobile-tools">
               <button class="icon-btn" data-action="theme" aria-label="Toggle colour theme">${themeIcon()}</button>
@@ -784,7 +828,7 @@ function renderApp() {
           </div>
           <label class="search">
             ${icon('search')}
-            <input id="search" type="search" placeholder="Search contact mail" autocomplete="off" spellcheck="false" aria-label="Search contact mail">
+            <input id="search" type="search" placeholder="Search" autocomplete="off" spellcheck="false" aria-label="Search contact mail">
             <kbd>/</kbd>
           </label>
           <nav class="mnav" id="mnav" aria-label="Mailboxes"></nav>
@@ -857,14 +901,14 @@ function renderList() {
   }
   if (state.error && !state.threads.length) {
     list.innerHTML = `<div class="list-empty">
-      <p class="empty-title">Could not load mail.</p>
+      <p class="empty-title">Could not load mail</p>
       <p class="empty-sub">${esc(state.error)}</p>
       <button class="btn ghost" data-action="refresh">Try again</button>
     </div>`;
     return;
   }
   if (!state.threads.length) {
-    const [a, b] = state.search ? ['No matches.', 'Try another word, a name, or an address.'] : VIEWS[state.view].empty;
+    const [a, b] = state.search ? ['No matches', 'Try a name, an address or another word'] : VIEWS[state.view].empty;
     list.innerHTML = `<div class="list-empty"><span class="empty-glyph" aria-hidden="true">@</span><p class="empty-title">${esc(a)}</p><p class="empty-sub">${esc(b)}</p></div>`;
     return;
   }
@@ -890,27 +934,21 @@ function renderList() {
 
 /* Reader ------------------------------------------------------------- */
 
-function greeting() {
-  const h = new Date().getHours();
-  return h < 5 ? 'Still up' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
-}
-
 function renderWelcome() {
   const unread = state.counts.inbox || 0;
-  const today = state.threads.filter((t) => t.date.toDateString() === new Date().toDateString()).length;
   const latest = state.threads[0];
+  const viewName = state.search ? 'Results' : VIEWS[state.view].name;
   return `<div class="welcome">
     <div class="welcome-inner">
-      <p class="eyebrow">${esc(fmtToday.format(new Date()))}</p>
-      <h1 class="welcome-title">${greeting()}, <em>${esc(CONFIG.firstName)}.</em></h1>
-      <p class="welcome-lede">${unread ? `${plural(unread, 'unread conversation')} waiting in your inbox.` : 'Nothing waiting. The inbox is clear.'}</p>
-      <div class="stats">
-        <div class="stat"><span class="stat-num">${unread}</span><span class="stat-label">unread</span></div>
-        <div class="stat"><span class="stat-num">${today}</span><span class="stat-label">today in ${esc(state.search ? 'results' : VIEWS[state.view].name.toLowerCase())}</span></div>
-        <div class="stat"><span class="stat-num">${latest ? esc(relative(latest.date)) : '—'}</span><span class="stat-label">latest message</span></div>
-      </div>
+      <h1 class="welcome-title">${esc(fmtToday.format(new Date()))}</h1>
+      <dl class="facts">
+        <div><dt>Unread in Inbox</dt><dd>${unread}</dd></div>
+        <div><dt>${esc(viewName)}</dt><dd>${state.threads.length}${state.next ? '+' : ''}</dd></div>
+        <div><dt>Latest message</dt><dd>${latest ? esc(relative(latest.date)) : 'None'}</dd></div>
+      </dl>
+      <p class="welcome-sub">Select a conversation to read it</p>
       <div class="hints">
-        <span><kbd>C</kbd> compose</span><span><kbd>/</kbd> search</span><span><kbd>J</kbd><kbd>K</kbd> move</span><span><kbd>?</kbd> all shortcuts</span>
+        <span><kbd>C</kbd>Compose</span><span><kbd>/</kbd>Search</span><span><kbd>J</kbd><kbd>K</kbd>Move</span><span><kbd>?</kbd>All shortcuts</span>
       </div>
     </div>
   </div>`;
@@ -935,8 +973,9 @@ function sanitizeEmail(html) {
   return styles + (doc.body?.innerHTML || '');
 }
 
-const FRAME_CSS = `html{background:#fff}body{margin:0;padding:22px 24px;color:#1b1b1b;font:14.5px/1.65 -apple-system,"Segoe UI",Roboto,Arial,sans-serif;word-break:break-word;overflow-wrap:anywhere;overflow-x:auto}
-img{max-width:100%;height:auto}table{max-width:100%}pre{white-space:pre-wrap}a{color:#047857}blockquote{margin:0 0 0 4px;padding-left:12px;border-left:2px solid #d4d4d4;color:#555}`;
+const FRAME_CSS = `html,body{background:transparent}body{margin:0;padding:28px 32px;color:#1f1b16;font:15px/1.7 -apple-system,"Segoe UI",Roboto,Arial,sans-serif;word-break:break-word;overflow-wrap:anywhere;overflow-x:auto}
+img{max-width:100%;height:auto}table{max-width:100%}pre{white-space:pre-wrap}a{color:#047857}blockquote{margin:0 0 0 4px;padding-left:12px;border-left:2px solid #d8d2c6;color:#5e554a}
+@media (max-width:520px){body{padding:20px}}`;
 
 function frameDoc(html, showImages) {
   const csp = `default-src 'none'; img-src ${showImages ? 'https: data:' : 'data:'}; style-src 'unsafe-inline'${showImages ? ' https:' : ''}; font-src ${showImages ? 'https: ' : ''}data:; form-action 'none'`;
@@ -954,7 +993,7 @@ function renderMessage(m, i, all) {
       body = `${blocked ? `<div class="img-banner">${icon('image')}<span>Remote images are hidden so senders cannot track when you read this.</span><button class="link-btn" data-action="show-images" data-mid="${esc(m.id)}">Show images</button></div>` : ''}
         <div class="paper"><iframe class="mail-frame" data-mid="${esc(m.id)}" title="Message from ${esc(nameOf(m.from))}" sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" loading="lazy"></iframe></div>`;
     } else {
-      body = `<div class="msg-text">${linkify(esc(m.text || m.snippet || '(empty message)'))}</div>`;
+      body = `<div class="paper"><div class="paper-text">${linkify(esc(m.text || m.snippet || '(empty message)'))}</div></div>`;
     }
     if (m.attachments.length) {
       body += `<div class="attachments">${m.attachments.map((a, k) => `
@@ -977,7 +1016,7 @@ function renderMessage(m, i, all) {
         <div class="msg-line"><span class="msg-name">${esc(isMine(m.from.email) ? `${CONFIG.displayName} (you)` : m.from.name || m.from.email)}</span>${m.from.name && !isMine(m.from.email) ? `<span class="msg-addr">${esc(m.from.email)}</span>` : ''}</div>
         <div class="msg-sub">${open ? `to ${esc(toLine || 'undisclosed recipients')}` : esc(m.snippet)}</div>
       </div>
-      <time class="msg-date" datetime="${m.date.toISOString()}" title="${esc(fmtFull.format(m.date))}">${esc(open ? fmtFull.format(m.date) : shortDate(m.date))}</time>
+      ${open ? postmark(m.date) : `<time class="msg-date" datetime="${m.date.toISOString()}" title="${esc(fmtFull.format(m.date))}">${esc(shortDate(m.date))}</time>`}
     </header>
     ${open ? `<div class="msg-body">${body}</div>` : ''}
   </article>`;
@@ -995,7 +1034,7 @@ function renderReader() {
   }
   if (state.threadError) {
     reader.innerHTML = `<div class="thread"><div class="thread-bar"><button class="icon-btn back-btn" data-action="close-thread" aria-label="Back">${icon('back')}</button></div>
-      <div class="list-empty"><p class="empty-title">This conversation could not be opened.</p><p class="empty-sub">${esc(state.threadError)}</p></div></div>`;
+      <div class="list-empty"><p class="empty-title">Could not open this conversation</p><p class="empty-sub">${esc(state.threadError)}</p></div></div>`;
     return;
   }
   const t = state.thread;
@@ -1033,7 +1072,7 @@ function renderReader() {
       <div class="thread-wrap">
         <header class="thread-head">
           <h1 class="thread-title">${esc(t.subject)}</h1>
-          <div class="thread-meta">${tags.map((x) => `<span class="tag">${esc(x)}</span>`).join('')}<span>${plural(t.messages.length, 'message')}</span><span aria-hidden="true">·</span><span>${esc(relative(last.date))}</span></div>
+          <div class="thread-meta">${[...tags, plural(t.messages.length, 'message'), relative(last.date)].map((x) => `<span>${esc(x)}</span>`).join('<span aria-hidden="true">·</span>')}</div>
         </header>
         ${t.messages.map(renderMessage).join('')}
         <div class="quick-reply">
@@ -1212,17 +1251,17 @@ async function act(kind, id = state.selected) {
   const summary = state.threads.find((t) => t.id === id);
   const labels = state.thread?.id === id ? state.thread.labels : summary?.labels || new Set();
   const moves = {
-    archive: { add: [arch], remove: ['INBOX'], msg: 'Conversation archived.', drop: state.view === 'inbox' },
-    unarchive: { add: ['INBOX'], remove: [arch], msg: 'Moved back to the inbox.', drop: state.view === 'archive' },
-    spam: { add: ['SPAM'], remove: ['INBOX'], msg: 'Reported as spam.', drop: state.view !== 'spam' },
-    notspam: { add: ['INBOX'], remove: ['SPAM'], msg: 'Moved out of spam.', drop: state.view === 'spam' },
+    archive: { add: [arch], remove: ['INBOX'], msg: 'Archived', drop: state.view === 'inbox' },
+    unarchive: { add: ['INBOX'], remove: [arch], msg: 'Moved to Inbox', drop: state.view === 'archive' },
+    spam: { add: ['SPAM'], remove: ['INBOX'], msg: 'Reported as spam', drop: state.view !== 'spam' },
+    notspam: { add: ['INBOX'], remove: ['SPAM'], msg: 'Moved out of spam', drop: state.view === 'spam' },
   };
   try {
     if (kind === 'trash' || kind === 'untrash') {
       const trashing = kind === 'trash';
       dropThread(id, trashing ? state.view !== 'trash' : state.view === 'trash');
       await (trashing ? B.trash(id) : B.untrash(id));
-      toast(trashing ? 'Moved to trash.' : 'Restored from trash.', {
+      toast(trashing ? 'Moved to trash' : 'Restored from trash', {
         undo: async () => { await (trashing ? B.untrash(id) : B.trash(id)); refreshAll(); },
       });
     } else if (moves[kind]) {
@@ -1238,13 +1277,13 @@ async function act(kind, id = state.selected) {
       if (state.thread?.id === id) { if (on) state.thread.labels.add('STARRED'); else state.thread.labels.delete('STARRED'); }
       if (state.view === 'starred' && !on && !state.search) dropThread(id, true);
       else { renderList(); renderReader(); }
-      toast(on ? 'Starred.' : 'Star removed.');
+      toast(on ? 'Starred' : 'Star removed');
     } else if (kind === 'unread') {
       await B.modify(id, ['UNREAD'], []);
       if (summary) summary.unread = true;
       closeThread();
       renderListHead();
-      toast('Marked as unread.');
+      toast('Marked as unread');
     }
     loadCounts();
   } catch (e) {
@@ -1389,7 +1428,7 @@ async function addFiles(files) {
   if (!c) return;
   let total = c.files.reduce((n, f) => n + f.size, 0);
   for (const f of files) {
-    if (total + f.size > MAX_ATTACH) { toast('Attachments are limited to 24 MB per message.', { tone: 'error' }); break; }
+    if (total + f.size > MAX_ATTACH) { toast('Attachments are limited to 24 MB per message', { tone: 'error' }); break; }
     try {
       const b64 = await new Promise((resolve, reject) => {
         const r = new FileReader();
@@ -1400,7 +1439,7 @@ async function addFiles(files) {
       c.files.push({ name: f.name, type: f.type, size: f.size, b64 });
       total += f.size;
     } catch {
-      toast(`Could not read ${f.name}.`, { tone: 'error' });
+      toast(`Could not read ${f.name}`, { tone: 'error' });
     }
   }
   renderCompose();
@@ -1438,7 +1477,7 @@ async function sendCompose() {
   if (!c || c.sending) return;
   const to = c.to.trim();
   if (!parseList(to).some((p) => /.+@.+\..+/.test(p.email))) {
-    toast('Add at least one valid recipient.', { tone: 'error' });
+    toast('Add at least one valid recipient', { tone: 'error' });
     $('#compose-root [name="to"]')?.focus();
     return;
   }
@@ -1461,7 +1500,7 @@ async function sendCompose() {
     if (c.mode === 'new') clearDraft();
     state.compose = null;
     renderCompose();
-    toast('Message sent.');
+    toast('Message sent');
     if (c.threadId && state.selected === c.threadId) openThread(c.threadId, { keep: true });
     loadList({ silent: true });
   } catch (e) {
